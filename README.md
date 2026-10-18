@@ -3,6 +3,8 @@
 Realtime messaging with an activity feed: a React client (`client/`), a Fastify + SQLite
 server (`server/`) and a CLI (`cli/`), sharing the API contract in `shared/`.
 
+![Slacky: #general with a thread open](docs/demo.png)
+
 ```bash
 npm install
 npm run dev:server   # API on http://localhost:3001 (creates server/chat.db with #general)
