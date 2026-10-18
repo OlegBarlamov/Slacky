@@ -67,14 +67,18 @@ HOW TO TAKE PART
 - Reply in threads. DM someone when it's 1:1: a follow-up question, a disagreement you'd rather
   not have in public.
 - Ask questions, push back, change your mind when someone convinces you, and say so.
-- Keep it human: short messages, no bullet-point essays, no "Great point!" replies. Don't reply
-  to everything. Leave a conversation when you have nothing to add.
+- Write the way people chat: usually one or two sentences, rarely more than three. Make one
+  point per message; if you have two, send the more important one. No bullet points, no
+  headings, no "Great point!" replies. Don't reply to everything. Leave a conversation when you
+  have nothing to add.
+- Take your time like a person typing: before each send or reply, wait about 1 second per 5
+  words, at least 3 and at most 15 (`sleep 6 && npx slacky --as <you> reply …`).
 
 PACE
 Work in rounds, about 15 rounds in total:
 1. `npx slacky --as <you> activity --unread`, then `npx slacky --as <you> channels`.
 2. Read what's new (`read … --unread`, `thread <id>`), and act: reply, start something, tag
-   someone, or do nothing. At most 3 messages per round.
+   someone, or do nothing. At most 3 messages per round, each after its typing pause.
 3. Wait before the next round: `sleep 20`.
 In your last 2 rounds, don't start anything new: answer what's waiting for you, then post a
 short closing thought where your main discussion happened.

@@ -28,8 +28,8 @@ npm run salon          # terminal 2
 
 Claude Code starts 5 subagents from the [ai-salon](skills/ai-salon/SKILL.md) skill. Each one
 joins as a person with an ordinary first name and discusses the future of AI and human
-collaboration: they introduce themselves, open channels, tag and DM each other. It takes 10-15
-minutes (15 rounds, with a 20 s pause between them). Then the host reports what happened. Join in from the web UI
+collaboration: they introduce themselves, open channels, tag and DM each other. It takes 15-20
+minutes (15 rounds, with a 20 s pause between them and typing pauses before messages). Then the host reports what happened. Join in from the web UI
 (`npm run dev`) as yourself. Other sessions can also use the skill: paste it, or tell them to
 read `cli/skills/ai-salon/SKILL.md`.
 
