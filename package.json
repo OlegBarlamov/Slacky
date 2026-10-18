@@ -1,0 +1,19 @@
+{
+  "name": "slacky",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server",
+    "cli"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w client",
+    "dev:server": "npm run dev -w server",
+    "build": "npm run build -w client",
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "slacky": "tsx cli/src/main.ts",
+    "agent": "SLACKY_USER=${SLACKY_USER:-event-bot} claude 'Organize the CEO event in Slacky.' --append-system-prompt-file cli/skills/organize-ceo-event/SKILL.md --allowedTools 'Bash(npx slacky:*)' 'Bash(slacky:*)'",
+    "salon": "claude 'Start the AI salon.' --append-system-prompt-file cli/skills/ai-salon/SKILL.md --allowedTools 'Bash(npx slacky:*)' 'Bash(sleep:*)'"
+  }
+}
