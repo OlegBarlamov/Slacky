@@ -1,7 +1,7 @@
 // `slacky`: one command per run, pull-only. See docs/CLI.md.
 import { createHash } from 'node:crypto';
 import { parseArgs } from 'node:util';
-import type { ActivityItem, ConversationView, Message, MessagePage, SearchResult, ThreadView } from '../../shared/types';
+import type { ActivityItem, ConversationView, Message, MessagePage, SearchResult, ThreadView, User } from '../../shared/types';
 import { CliError, Client, EXIT } from './client';
 import * as render from './render';
 import { Workspace } from './resolve';
@@ -86,6 +86,8 @@ async function markSeen(ctx: Ctx, shown: Message[], position: { path: string; se
   if (seen.length) await ctx.client.request('POST', '/activity/read', { ids: seen });
 }
 
+const USERS_LIMIT = 100;
+
 const lines = (items: string[], empty: string) => (items.length ? items.join('\n') : empty);
 
 const COMMANDS: Record<string, Command> = {
@@ -156,13 +158,15 @@ Read one with: slacky read @name`,
   users: {
     usage: 'users [query]',
     summary: 'people in the workspace',
-    help: `Lists users by name and id; "(you)" marks you.
-  query   only names containing it`,
+    help: `Lists users by name and id (the first ${USERS_LIMIT}); "(you)" marks you.
+  query   only names starting with it`,
     async run(ctx) {
       const ws = await ctx.ws();
       const q = (ctx.args[0] ?? '').replace(/^@/, '').toLowerCase();
-      const list = ws.boot.users.filter((u) => u.name.includes(q));
-      ctx.out(list, lines(list.map((u) => `@${u.name}  ${u.id}${u.id === ws.me.id ? '  (you)' : ''}`), 'No users match'));
+      const list = await ctx.client.request<User[]>('GET', `/users?q=${encodeURIComponent(q)}&limit=${USERS_LIMIT}`);
+      const text = list.map((u) => `@${u.name}  ${u.id}${u.id === ws.me.id ? '  (you)' : ''}`);
+      if (list.length === USERS_LIMIT) text.push('(more: narrow it with a query)');
+      ctx.out(list, lines(text, 'No users match'));
     },
   },
 
@@ -228,12 +232,12 @@ Examples:
         const fresh = ctx.opts.unread ? page.messages.filter((m) => m.seq > view.lastReadSeq) : page.messages;
         messages = [...fresh, ...messages];
         const oldest = page.messages[0]?.seq;
-        if (!ctx.opts.unread || !page.hasMore || oldest === undefined || oldest <= view.lastReadSeq + 1 || pages >= 9) break;
+        if (!ctx.opts.unread || !page.hasBefore || oldest === undefined || oldest <= view.lastReadSeq + 1 || pages >= 9) break;
         before = oldest;
       }
       const truncated = limit !== undefined && messages.length > limit;
       if (truncated) messages = messages.slice(-limit);
-      const hasMore = truncated || (!ctx.opts.unread && page.hasMore);
+      const hasMore = truncated || (!ctx.opts.unread && page.hasBefore);
       const newest = messages.at(-1);
       if (newest) await markSeen(ctx, messages, { path: `/conversations/${id}/read`, seq: newest.seq });
       const text = messages.map((m) => render.message(ws, m));
@@ -252,7 +256,13 @@ Example:
   slacky thread m_8f2c41d0a9b3`,
     async run(ctx) {
       const ws = await ctx.ws();
-      const view = await ctx.client.request<ThreadView>('GET', `/threads/${need(ctx, 0, 'message id')}`);
+      // Replies come in pages; read forward from the first one to the end.
+      const rootId = encodeURIComponent(need(ctx, 0, 'message id'));
+      let view = await ctx.client.request<ThreadView>('GET', `/threads/${rootId}?after=0&limit=100`);
+      while (view.hasAfter) {
+        const next = await ctx.client.request<ThreadView>('GET', `/threads/${rootId}?after=${view.replies.at(-1)!.seq}&limit=100`);
+        view = { ...next, replies: [...view.replies, ...next.replies], hasBefore: false };
+      }
       const last = view.replies.at(-1);
       await markSeen(ctx, [view.root, ...view.replies], last ? { path: `/threads/${view.root.id}/read`, seq: last.seq } : null);
       const replies = view.replies.map((m) => render.message(ws, m).replace(/^/gm, '    '));
@@ -350,7 +360,6 @@ Example:
       if (!q.trim()) throw usage('Missing query', 'e.g. slacky search deploy from:@alice in:#ops');
       const limit = int(ctx.opts.limit, '--limit');
       const result = await ctx.client.request<SearchResult>('GET', `/search?q=${encodeURIComponent(q)}${limit ? `&limit=${limit}` : ''}`);
-      if (result.pendingChanges > 0) ctx.io.stderr(`note: the search index is ${result.pendingChanges} changes behind; the newest messages may be missing`);
       const text = result.messages.map((m) => render.message(ws, m, { conv: true, replyTo: true }));
       if (result.total > result.messages.length) text.push(`(showing ${result.messages.length} of ${result.total})`);
       ctx.out(result, lines(text, 'No matches'));

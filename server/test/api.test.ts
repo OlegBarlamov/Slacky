@@ -1,14 +1,21 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ActivityItem, Bootstrap, Message, MessagePage, SearchResult, ThreadView } from '../../shared/types';
 import { buildApp } from '../src/app';
-import { openDb } from '../src/repositories/db';
+import { createTestDb, type TestDb } from './db';
 
 // End to end through HTTP: routes, cookie sessions, services and the DB.
-let app: ReturnType<typeof buildApp>['app'];
-let bus: ReturnType<typeof buildApp>['bus'];
+let t: TestDb;
+let app: Awaited<ReturnType<typeof buildApp>>['app'];
+let bus: Awaited<ReturnType<typeof buildApp>>['bus'];
 
-beforeEach(() => {
-  ({ app, bus } = buildApp(openDb(), { sessionSecret: 'test' }));
+beforeEach(async () => {
+  t = await createTestDb();
+  ({ app, bus } = await buildApp(t.db, { sessionSecret: 'test' }));
+});
+afterEach(async () => {
+  await bus.idle(); // listeners read the DB, so let them finish before the schema goes
+  await app.close();
+  await t.drop();
 });
 
 async function signIn(name: string, mode: 'register' | 'login' = 'register') {
@@ -65,7 +72,6 @@ describe('messaging', () => {
     await bob.call('POST', `/conversations/${conv}/read`, { seq: root.seq });
     expect(inConv((await bob.call<Bootstrap>('GET', '/bootstrap')).body)).toMatchObject({ unreadCount: 0, mentionCount: 0 });
 
-    await bus.idle(); // the search index catches up asynchronously
     const found = (await bob.call<SearchResult>('GET', '/search?q=depl')).body;
     expect(found.messages.map((m) => m.id)).toEqual([root.id]);
     expect((await bob.call<SearchResult>('GET', '/search?q=depl%20from:bob')).body.total).toBe(0);

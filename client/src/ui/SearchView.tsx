@@ -62,12 +62,6 @@ export function SearchView({ q }: { q: string }) {
         </div>
       )}
 
-      {result && result.pendingChanges > 0 && (
-        <div className="border-b bg-amber-50 px-5 py-1.5 text-sm text-amber-800">
-          The search index is catching up — {result.pendingChanges} recent change(s) aren’t searchable yet.
-        </div>
-      )}
-
       <div className="flex-1 overflow-y-auto">
         {error && (
           <div className="p-10 text-center">

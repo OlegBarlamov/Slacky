@@ -28,7 +28,7 @@ function Row(props: { authorId: string; at: number; showHeader: boolean; highlig
         {props.showHeader ? (
           <Avatar user={author} />
         ) : (
-          <span className="invisible group-hover:visible text-[10px] text-gray-400 leading-6">{fmtTime(props.at)}</span>
+          <span className="invisible group-hover:visible whitespace-nowrap text-[10px] text-gray-400 leading-6">{fmtTime(props.at)}</span>
         )}
       </div>
       <div className="min-w-0 flex-1">
@@ -167,4 +167,14 @@ export function PendingItem({ p, showHeader }: { p: Pending; showHeader: boolean
 /** Slack-style grouping: consecutive messages by the same author within 5 minutes share a header. */
 export function sameGroup(prev: { authorId: string; createdAt: number; deletedAt?: number | null } | undefined, next: { authorId: string; createdAt: number }) {
   return !!prev && !prev.deletedAt && prev.authorId === next.authorId && next.createdAt - prev.createdAt < 5 * 60_000 && new Date(prev.createdAt).toDateString() === new Date(next.createdAt).toDateString();
+}
+
+export function Divider({ label, red }: { label: string; red?: boolean }) {
+  return (
+    <div className={`my-2 flex items-center gap-2 px-5 text-xs font-semibold ${red ? 'text-rose-600' : 'text-gray-500'}`}>
+      <div className={`h-px flex-1 ${red ? 'bg-rose-300' : 'bg-gray-200'}`} />
+      {label}
+      <div className={`h-px flex-1 ${red ? 'bg-rose-300' : 'bg-gray-200'}`} />
+    </div>
+  );
 }

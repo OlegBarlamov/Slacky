@@ -14,7 +14,18 @@ const matches = (i: ActivityItem, f: Filter) => f === 'all' || (f === 'mentions'
 export function ActivityFeed({ filter, unreadOnly }: { filter: Filter; unreadOnly: boolean }) {
   const activity = useStore((s) => s.activity);
   const inTab = Object.values(activity).filter((i) => matches(i, filter));
-  const items = inTab.filter((i) => !unreadOnly || !i.read).sort((a, b) => b.updatedAt - a.updatedAt);
+
+  // All tab only: a mention inside a thread is shown in that thread's row instead of as a
+  // second row for the same message. The two items keep their own read state and badges;
+  // this only changes how they're listed.
+  const threadRoots = new Set(inTab.flatMap((i) => (i.kind === 'thread' ? [i.threadRootId] : [])));
+  const foldsIntoThread = (i: ActivityItem) => filter === 'all' && i.kind === 'mention' && !!i.threadRootId && threadRoots.has(i.threadRootId);
+  const rows = inTab
+    .filter((i) => !foldsIntoThread(i))
+    .map((item) => ({ item, mentions: item.kind === 'thread' ? inTab.filter((m) => foldsIntoThread(m) && m.threadRootId === item.threadRootId) : [] }));
+  const rowUnread = (r: Row) => !r.item.read || r.mentions.some((m) => !m.read);
+  const rowUpdated = (r: Row) => Math.max(r.item.updatedAt, ...r.mentions.map((m) => m.updatedAt));
+  const items = rows.filter((r) => !unreadOnly || rowUnread(r)).sort((a, b) => rowUpdated(b) - rowUpdated(a));
   const unreadIds = inTab.filter((i) => !i.read).map((i) => i.id); // "mark all" covers the current tab
 
   return (
@@ -52,15 +63,18 @@ export function ActivityFeed({ filter, unreadOnly }: { filter: Filter; unreadOnl
         {items.length === 0 && (
           <p className="p-10 text-center text-gray-500">{unreadOnly ? 'You’re all caught up 🎉' : 'Nothing here yet.'}</p>
         )}
-        {items.map((item) => (
-          <ActivityRow key={item.id} item={item} />
+        {items.map(({ item, mentions }) => (
+          <ActivityRow key={item.id} item={item} mentions={mentions} />
         ))}
       </div>
     </section>
   );
 }
 
-function ActivityRow({ item }: { item: ActivityItem }) {
+type Row = { item: ActivityItem; mentions: ActivityItem[] };
+
+/** One feed row. `mentions` are mention items folded into a thread row (All tab). */
+function ActivityRow({ item, mentions = [] }: Row) {
   const users = useStore((s) => s.users);
   const me = useStore((s) => s.me)!;
   // Mentions can come from channels you haven't joined yet.
@@ -75,9 +89,15 @@ function ActivityRow({ item }: { item: ActivityItem }) {
   const state = item.kind !== 'dm' && item.kind !== 'thread' && knownDeleted ? 'deleted' : item.state;
   const n = item.entries.length;
 
+  const unread = !item.read || mentions.some((m) => !m.read);
+  const updatedAt = Math.max(item.updatedAt, ...mentions.map((m) => m.updatedAt));
+
   let icon = '@';
   let title: string;
-  if (item.kind === 'mention') {
+  if (mentions.length) {
+    const mentionedBy = [...new Set(mentions.map((m) => m.entries[0]?.authorId).filter(Boolean))].map((id) => userName(users, id!));
+    title = `${listNames(mentionedBy)} mentioned you in a thread in ${where}${n > 1 ? ` · ${n} new replies` : ''}`;
+  } else if (item.kind === 'mention') {
     title = `${authors[0]} mentioned ${item.channelWide ? '@channel' : 'you'}${item.threadRootId ? ' in a thread' : ''} in ${where}`;
   } else if (item.kind === 'dm') {
     icon = '✉';
@@ -95,15 +115,15 @@ function ActivityRow({ item }: { item: ActivityItem }) {
 
   return (
     <button onClick={open} className={`flex w-full gap-3 border-b px-5 py-3 text-left hover:bg-gray-50 ${state !== 'active' ? 'opacity-60' : ''}`}>
-      <div className="flex w-3 shrink-0 justify-center pt-3">{!item.read && <span className="h-2 w-2 rounded-full bg-sky-600" />}</div>
+      <div className="flex w-3 shrink-0 justify-center pt-3">{unread && <span className="h-2 w-2 rounded-full bg-sky-600" />}</div>
       <div className="relative shrink-0">
         <Avatar user={users[last?.authorId ?? '']} />
         <span className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full border bg-white text-[11px]">{icon}</span>
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className={`truncate text-sm ${item.read ? 'text-gray-600' : 'font-semibold'} ${item.channelWide ? 'text-gray-500' : ''}`}>{title}</span>
-          <span className="ml-auto shrink-0 text-xs text-gray-400">{ago(item.updatedAt)}</span>
+          <span className={`truncate text-sm ${unread ? 'font-semibold' : 'text-gray-600'} ${item.channelWide ? 'text-gray-500' : ''}`}>{title}</span>
+          <span className="ml-auto shrink-0 text-xs text-gray-400">{ago(updatedAt)}</span>
         </div>
         {item.kind === 'thread' && rootText && <div className="truncate text-xs text-gray-400">Re: {rootText}</div>}
         <div className="mt-0.5 line-clamp-2 text-sm text-gray-800">

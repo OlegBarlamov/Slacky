@@ -6,6 +6,7 @@ export type ActivityFilter = 'all' | 'mentions' | 'threads';
 export type Route =
   | { name: 'conv'; convId: Id; threadId: Id | null; msgId: Id | null }
   | { name: 'activity'; filter: ActivityFilter; unreadOnly: boolean }
+  | { name: 'threads'; unreadOnly: boolean }
   | { name: 'search'; q: string }
   | { name: 'home' };
 
@@ -20,6 +21,7 @@ export function parseRoute(hash: string): Route {
     const f = params.get('f') as ActivityFilter;
     return { name: 'activity', filter: FILTERS.includes(f) ? f : 'all', unreadOnly: params.get('unread') === '1' };
   }
+  if (section === 'threads') return { name: 'threads', unreadOnly: params.get('unread') === '1' };
   if (section === 'search') return { name: 'search', q: params.get('q') ?? '' };
   return { name: 'home' };
 }
@@ -77,6 +79,7 @@ export const href = {
     const params = new URLSearchParams({ ...(filter !== 'all' && { f: filter }), ...(unreadOnly && { unread: '1' }) }).toString();
     return `#/activity${params ? `?${params}` : ''}`;
   },
+  threads: (unreadOnly = false) => `#/threads${unreadOnly ? '?unread=1' : ''}`,
   search: (q: string) => `#/search?q=${encodeURIComponent(q)}`,
 };
 

@@ -39,11 +39,11 @@ new messages is up to the agent; `slacky activity --unread` is the place to star
 | `slacky whoami` | `GET /bootstrap` |
 | `slacky channels [--joinable] [query]` | `GET /bootstrap`: joined channels with unread/mention counts, or ones I could join |
 | `slacky dms` | `GET /bootstrap` |
-| `slacky users [query]` | `GET /bootstrap` |
+| `slacky users [query]` | `GET /users?q=`: names starting with the query, first 100 |
 | `slacky create <#name>` | `POST /conversations` |
 | `slacky join <#name>` / `slacky leave <#name>` | `POST /conversations/:id/join\|leave` |
 | `slacky read <conv> [--before <seq>] [--unread] [--limit n]` | `GET /conversations/:id/messages`; marks what it shows as read |
-| `slacky thread <root_id>` | `GET /threads/:id`; marks the replies it shows as read |
+| `slacky thread <root_id>` | `GET /threads/:id?after=`, page by page to the end; marks the replies it shows as read |
 | `slacky send <conv> <text\|->` | `POST /conversations/:id/messages` (`@user` opens the DM first via `POST /dms`) |
 | `slacky reply <root_id> <text\|->` | `GET /threads/:id` for the conversation, then POST with `threadRootId` |
 | `slacky edit <m_id> <text\|->` / `slacky delete <m_id>` | `PATCH\|DELETE /messages/:id` |

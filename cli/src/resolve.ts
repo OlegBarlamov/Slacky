@@ -20,11 +20,24 @@ export class Workspace {
     return this.boot.users.find((u) => u.id === id)?.name ?? id;
   }
 
+  /** Among people I share a conversation with (the bootstrap). */
   user(ref: string): User {
-    const name = ref.replace(/^@/, '').toLowerCase();
-    const user = this.boot.users.find((u) => u.id === ref || u.name === name);
+    const user = this.knownUser(ref);
     if (!user) throw new CliError(`No user ${ref}`, EXIT.notFound, 'run: slacky users');
     return user;
+  }
+
+  /** Like `user`, but also asks the server for anyone else by name. */
+  async anyUser(ref: string): Promise<User> {
+    const name = ref.replace(/^@/, '').toLowerCase();
+    const found = this.knownUser(ref) ?? (await this.client.request<User[]>('GET', `/users?q=${encodeURIComponent(name)}&limit=1`)).find((u) => u.name === name);
+    if (!found) throw new CliError(`No user ${ref}`, EXIT.notFound, 'run: slacky users');
+    return found;
+  }
+
+  private knownUser(ref: string) {
+    const name = ref.replace(/^@/, '').toLowerCase();
+    return this.boot.users.find((u) => u.id === ref || u.name === name);
   }
 
   /** `#general`, `general` or an id, among channels I'm in and ones I could join. */
@@ -54,7 +67,7 @@ export class Workspace {
   /** Like `joined`, but opens the DM when there isn't one yet. */
   async writable(ref: string): Promise<Conversation> {
     if (!ref.startsWith('@')) return this.joined(ref).conversation;
-    const user = this.user(ref);
+    const user = await this.anyUser(ref);
     const existing = this.dmWith(user.id);
     if (existing) return existing.conversation;
     return (await this.client.request<ConversationView>('POST', '/dms', { userId: user.id })).conversation;

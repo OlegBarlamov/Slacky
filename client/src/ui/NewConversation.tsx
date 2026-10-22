@@ -5,6 +5,7 @@ import { href, navigate } from '../state/route';
 import { createChannel, joinChannel, openDm, useStore } from '../state/store';
 import { Avatar } from './Avatar';
 import { Modal } from './Modal';
+import { useUserSearch } from './useUserSearch';
 
 type ChannelOption =
   | { kind: 'open' | 'join'; channel: Conversation; hint: string }
@@ -103,8 +104,9 @@ export function NewDmModal({ onClose }: { onClose: () => void }) {
   const me = useStore((s) => s.me)!;
 
   const q = query.trim().toLowerCase().replace(/^@/, '');
-  const matches = Object.values(users)
-    .filter((u) => u.name.includes(q))
+  // People I know match anywhere in the name; the server finds everyone else by prefix.
+  const found = useUserSearch(q, null, 20);
+  const matches = [...new Map([...Object.values(users).filter((u) => u.name.includes(q)), ...found].map((u) => [u.id, u])).values()]
     .sort(
       (a, b) =>
         Number(b.id === me.id) - Number(a.id === me.id) || // yourself first, like Slack

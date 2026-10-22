@@ -1,37 +1,29 @@
-import { useEffect } from 'react';
+import { useState } from 'react';
 import type { Id } from '@shared/types';
 import { href } from '../state/route';
-import { loadThread, markThreadRead, useStore } from '../state/store';
+import { markThreadReadUpTo, useStore } from '../state/store';
+import { threadKey } from '../state/windows';
 import { Composer } from './Composer';
-import { Divider } from './ConversationView';
 import { conversationName } from './format';
-import { MessageItem, PendingItem, sameGroup } from './MessageItem';
-import { useJumpTo } from './useJumpTo';
+import { Divider, MessageItem } from './MessageItem';
+import { MessageList } from './MessageList';
 
 export function ThreadPane({ convId, rootId, msgId }: { convId: Id; rootId: Id; msgId: Id | null }) {
-  const thread = useStore((s) => s.threads[rootId]);
   const root = useStore((s) => s.messages[rootId]);
-  const messages = useStore((s) => s.messages);
   const pending = useStore((s) => s.pending);
   const conv = useStore((s) => s.convs[convId]?.conversation);
   const users = useStore((s) => s.users);
   const me = useStore((s) => s.me)!;
-  const unread = useStore((s) => Object.values(s.activity).some((i) => i.threadRootId === rootId && !i.read));
-  const loaded = !!thread;
-  const replyIds = thread?.replyIds ?? [];
-  const highlighted = useJumpTo(msgId, replyIds, false, async () => {});
-
-  useEffect(() => {
-    if (!loaded) void loadThread(rootId);
-  }, [rootId, loaded]);
-
-  useEffect(() => {
-    if (loaded && unread) markThreadRead(rootId);
-  }, [rootId, loaded, unread]);
+  // Snapshot of my read position when the thread opened, for the "New" divider. Known once
+  // the first page arrives (null: I don't follow the thread).
+  const lastRead = useStore((s) => s.threadReads[rootId]);
+  const [readMark, setReadMark] = useState<number | null | undefined>(lastRead);
+  if (readMark === undefined && lastRead !== undefined) setReadMark(lastRead);
 
   const myPending = Object.values(pending)
     .filter((p) => p.threadRootId === rootId)
     .sort((a, b) => a.createdAt - b.createdAt);
+  const replyCount = root?.thread?.replyCount ?? 0;
 
   return (
     <aside className="flex w-[420px] shrink-0 flex-col border-l">
@@ -43,22 +35,23 @@ export function ThreadPane({ convId, rootId, msgId }: { convId: Id; rootId: Id; 
           ×
         </a>
       </header>
-      <div className="flex-1 overflow-y-auto py-3">
-        {!root ? (
-          <p className="px-5 text-gray-400">Loading…</p>
-        ) : (
-          <>
-            <MessageItem m={root} showHeader highlighted={highlighted === root.id} inThread />
-            <Divider label={`${replyIds.length} ${replyIds.length === 1 ? 'reply' : 'replies'}`} />
-            {replyIds.map((id, i) => (
-              <MessageItem key={id} m={messages[id]} showHeader={!sameGroup(messages[replyIds[i - 1]], messages[id])} highlighted={highlighted === id} inThread />
-            ))}
-            {myPending.map((p, i) => (
-              <PendingItem key={p.clientMsgId} p={p} showHeader={i === 0} />
-            ))}
-          </>
-        )}
-      </div>
+      <MessageList
+        tkey={threadKey(rootId)}
+        inThread
+        target={msgId === rootId ? null : msgId}
+        readMark={readMark ?? null}
+        pending={myPending}
+        onReadUpTo={(seq) => markThreadReadUpTo(rootId, seq)}
+        header={(hasBefore) =>
+          root && (
+            <>
+              <MessageItem m={root} showHeader highlighted={false} inThread />
+              <Divider label={`${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`} />
+              {hasBefore && <p className="px-5 py-2 text-center text-sm text-gray-400">Loading earlier replies…</p>}
+            </>
+          )
+        }
+      />
       <Composer convId={convId} threadRootId={rootId} placeholder="Reply…" autoFocus />
     </aside>
   );

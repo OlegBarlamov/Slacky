@@ -51,7 +51,7 @@ export function Sidebar({ route }: { route: Route }) {
   const me = useStore((s) => s.me)!;
   const hidden = useStore((s) => s.hidden);
   const unreadActivity = useStore((s) => Object.values(s.activity).filter((i) => !i.read).length);
-  const unreadThreads = useStore((s) => Object.values(s.activity).filter((i) => i.kind === 'thread' && !i.read).length);
+  const unreadThreads = useStore((s) => Object.keys(s.unreadThreads).length);
   const [dialog, setDialog] = useState<'channel' | 'dm' | null>(null);
   const [width, setWidth] = useState(() => clampWidth(Number(localStorage.getItem(WIDTH_KEY)) || 256));
 
@@ -103,11 +103,10 @@ export function Sidebar({ route }: { route: Route }) {
         <span className="min-w-0 truncate">Slacky</span>
       </div>
       <div className="flex-1 overflow-y-auto py-3">
-        <Item to={href.activity()} active={route.name === 'activity' && route.filter !== 'threads'} bold={unreadActivity > 0} badge={unreadActivity}>
+        <Item to={href.activity()} active={route.name === 'activity'} bold={unreadActivity > 0} badge={unreadActivity}>
           🔔 Activity
         </Item>
-        {/* Shortcut to the activity feed filtered to threads */}
-        <Item to={href.activity('threads')} active={route.name === 'activity' && route.filter === 'threads'} bold={unreadThreads > 0} badge={unreadThreads}>
+        <Item to={href.threads()} active={route.name === 'threads'} bold={unreadThreads > 0} badge={unreadThreads}>
           🧵 Threads
         </Item>
 

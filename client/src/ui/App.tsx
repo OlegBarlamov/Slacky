@@ -8,6 +8,7 @@ import { SearchBox } from './SearchBox';
 import { SearchView } from './SearchView';
 import { Sidebar } from './Sidebar';
 import { ThreadPane } from './ThreadPane';
+import { ThreadsView } from './ThreadsView';
 
 export function App() {
   const status = useStore((s) => s.status);
@@ -36,6 +37,7 @@ function Shell() {
         <Sidebar route={route} />
         <main className="flex min-w-0 flex-1">
           {route.name === 'activity' && <ActivityFeed filter={route.filter} unreadOnly={route.unreadOnly} />}
+          {route.name === 'threads' && <ThreadsView key={String(route.unreadOnly)} unreadOnly={route.unreadOnly} />}
           {route.name === 'search' && <SearchView q={route.q} />}
           {route.name === 'conv' && (
             <>

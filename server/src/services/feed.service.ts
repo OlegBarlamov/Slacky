@@ -19,17 +19,17 @@ export class FeedService {
     private readonly conversations: ConversationService,
   ) {}
 
-  list(userId: Id): ActivityItem[] {
+  async list(userId: Id): Promise<ActivityItem[]> {
     const { feed } = this.repos;
-    const dms = feed.dms(userId, LIMIT).map((p) =>
-      this.group('dm', p, null, (after, limit) => feed.dmMessagesFromOthers(p.id, userId, after, limit), () => []),
+    const dms = (await feed.dms(userId, LIMIT)).map((p) =>
+      this.group('dm', p, null, (after, limit) => feed.dmMessagesFromOthers(p.id, userId, after, limit), async () => []),
     );
     // A thread shows as soon as I'm in it, even if only I have replied so far.
-    const threads = feed.threads(userId, LIMIT).map((p) =>
+    const threads = (await feed.threads(userId, LIMIT)).map((p) =>
       this.group('thread', p, p.id, (after, limit) => feed.replies(p.id, userId, after, limit), () => feed.replies(p.id, null, 0, 1)),
     );
-    const mentions = feed.mentions(userId, LIMIT).map((x): ActivityItem => {
-      const m = this.message(x.messageId);
+    const mentions = (await feed.mentions(userId, LIMIT)).map(async (x): Promise<ActivityItem> => {
+      const m = await this.message(x.messageId);
       return {
         id: `mention:${m.id}`,
         kind: 'mention',
@@ -42,7 +42,7 @@ export class FeedService {
         updatedAt: x.createdAt,
       };
     });
-    return [...dms, ...threads, ...mentions]
+    return (await Promise.all([...dms, ...threads, ...mentions]))
       .filter((i): i is ActivityItem => i !== null)
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, LIMIT);
@@ -52,26 +52,26 @@ export class FeedService {
    * One item as the user would see it now, or null if it's gone. Recomputes the user's
    * feed: simple, and cheap at this size (the realtime listener calls it per change).
    */
-  item(userId: Id, itemId: string): ActivityItem | null {
-    return this.list(userId).find((i) => i.id === itemId) ?? null;
+  async item(userId: Id, itemId: string): Promise<ActivityItem | null> {
+    return (await this.list(userId)).find((i) => i.id === itemId) ?? null;
   }
 
   /** Marks items read: a mention by its flag, a DM or thread by moving the read position to the end. */
-  markRead(userId: Id, itemIds: unknown, at = Date.now()) {
+  async markRead(userId: Id, itemIds: unknown, at = Date.now()) {
     if (!Array.isArray(itemIds) || !itemIds.every((x) => typeof x === 'string')) throw new AppError('invalid', 'ids must be strings');
     const parsed = (itemIds as string[]).map((id) => {
       const i = id.indexOf(':');
       return { kind: id.slice(0, i), target: id.slice(i + 1) };
     });
-    this.repos.transaction(() => {
-      this.repos.messages.markMentionsRead(userId, parsed.filter((p) => p.kind === 'mention').map((p) => p.target), at);
+    await this.repos.transaction(async () => {
+      await this.repos.messages.markMentionsRead(userId, parsed.filter((p) => p.kind === 'mention').map((p) => p.target), at);
       for (const { kind, target } of parsed) {
         if (kind === 'dm') {
-          this.conversations.requireMember(userId, target);
-          this.repos.conversations.markAllRead(target, userId);
+          await this.conversations.requireMember(userId, target);
+          await this.repos.conversations.markAllRead(target, userId);
         } else if (kind === 'thread') {
-          this.conversations.requireMember(userId, this.message(target).convId);
-          this.repos.messages.markThreadReadToEnd(target, userId);
+          await this.conversations.requireMember(userId, (await this.message(target)).convId);
+          await this.repos.messages.markThreadReadToEnd(target, userId);
         } else if (kind !== 'mention') {
           throw new AppError('invalid', `Unknown activity item "${kind}:${target}"`);
         }
@@ -83,22 +83,22 @@ export class FeedService {
    * A DM or thread item: the unread messages from others, or else the last one from others,
    * or else `fallback` (the latest of mine, for threads). Null when there's nothing to show.
    */
-  private group(
+  private async group(
     kind: 'dm' | 'thread',
     p: FeedPosition,
     threadRootId: Id | null,
-    fromOthers: (afterSeq: number, limit: number) => Id[],
-    fallback: () => Id[],
-  ): ActivityItem | null {
-    const unread = fromOthers(p.readSeq, ENTRIES);
-    const lastFromOthers = unread.length ? [] : fromOthers(0, 1);
-    const ids = unread.length ? unread : lastFromOthers.length ? lastFromOthers : fallback();
+    fromOthers: (afterSeq: number, limit: number) => Promise<Id[]>,
+    fallback: () => Promise<Id[]>,
+  ): Promise<ActivityItem | null> {
+    const unread = await fromOthers(p.readSeq, ENTRIES);
+    const lastFromOthers = unread.length ? [] : await fromOthers(0, 1);
+    const ids = unread.length ? unread : lastFromOthers.length ? lastFromOthers : await fallback();
     if (!ids.length) return null;
-    const messages = ids.reverse().map((id) => this.message(id));
+    const messages = await Promise.all(ids.reverse().map((id) => this.message(id)));
     return {
       id: `${kind}:${p.id}`,
       kind,
-      convId: kind === 'dm' ? p.id : this.message(p.id).convId,
+      convId: kind === 'dm' ? p.id : (await this.message(p.id)).convId,
       threadRootId,
       entries: messages.map(entry),
       channelWide: false,
@@ -108,8 +108,8 @@ export class FeedService {
     };
   }
 
-  private message(id: Id): Message {
-    const m = this.repos.messages.get(id);
+  private async message(id: Id): Promise<Message> {
+    const m = await this.repos.messages.get(id);
     if (!m) throw new AppError('not_found', 'Message not found');
     return m;
   }

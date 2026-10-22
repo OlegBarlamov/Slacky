@@ -1,8 +1,10 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
 import type { Id } from '@shared/types';
 import { sendMessage, setEditing, useStore } from '../state/store';
+import { convKey, threadKey } from '../state/windows';
 import { Avatar } from './Avatar';
 import { isTooLong, LengthHint, useAutoGrow } from './textInput';
+import { useUserSearch } from './useUserSearch';
 
 export function Composer({ convId, threadRootId = null, placeholder, autoFocus = false }: { convId: Id; threadRootId?: Id | null; placeholder: string; autoFocus?: boolean }) {
   const [text, setText] = useState('');
@@ -10,18 +12,18 @@ export function Composer({ convId, threadRootId = null, placeholder, autoFocus =
   const ref = useRef<HTMLTextAreaElement>(null);
   useAutoGrow(ref, text);
   const conv = useStore((s) => s.convs[convId]?.conversation);
-  const users = useStore((s) => s.users);
   const me = useStore((s) => s.me)!;
+  // Everyone is taggable; the server puts people in this conversation first.
+  const found = useUserSearch(mention?.query ?? null, convId);
 
-  // Everyone is taggable; people in this conversation come first.
   const members = new Set(conv?.memberIds);
   const candidates = mention
     ? [
-        ...Object.values(users)
-          .sort((a, b) => Number(!members.has(a.id)) - Number(!members.has(b.id)) || a.name.localeCompare(b.name))
+        ...found
+          .sort((a, b) => Number(!members.has(a.id)) - Number(!members.has(b.id)))
           .map((u) => ({ name: u.name, user: u, note: u.id === me.id ? 'you' : members.has(u.id) ? '' : 'not in this conversation' })),
-        // @channel / @here notify everyone, so they're offered only at the top level of a channel, not in replies.
-        ...(conv?.kind === 'channel' && !threadRootId ? ['channel', 'here'].map((name) => ({ name, user: null, note: 'notify everyone' })) : []),
+        // @channel notifies everyone, so it's offered only at the top level of a channel, not in replies.
+        ...(conv?.kind === 'channel' && !threadRootId ? [{ name: 'channel', user: null, note: 'notify everyone' }] : []),
       ]
         .filter((c) => c.name.startsWith(mention.query))
         .slice(0, 8)
@@ -51,7 +53,7 @@ export function Composer({ convId, threadRootId = null, placeholder, autoFocus =
 
   function editLastOwn() {
     const s = useStore.getState();
-    const ids = threadRootId ? s.threads[threadRootId]?.replyIds : s.timelines[convId]?.ids;
+    const ids = s.windows[threadRootId ? threadKey(threadRootId) : convKey(convId)]?.ids;
     const last = [...(ids ?? [])].reverse().find((id) => s.messages[id].authorId === me.id && !s.messages[id].deletedAt);
     if (last) setEditing(last);
   }

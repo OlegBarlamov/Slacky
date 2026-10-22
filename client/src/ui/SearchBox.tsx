@@ -7,6 +7,7 @@ import { api } from '../transport/api';
 import { Avatar } from './Avatar';
 import { conversationName, userName } from './format';
 import { RichText } from './RichText';
+import { useUserSearch } from './useUserSearch';
 
 const RECENT_KEY = 'slacky-recent-searches';
 
@@ -60,6 +61,7 @@ export function SearchBox({ initial }: { initial: string }) {
 
   const lastToken = q.split(/\s+/).pop() ?? '';
   const fromMatch = /^from:@?(.*)$/i.exec(lastToken);
+  const fromUsers = useUserSearch(open && fromMatch ? fromMatch[1].toLowerCase() : null, null, 6);
   const inMatch = /^in:#?(.*)$/i.exec(lastToken);
   const hashMatch = /^#(.*)$/.exec(lastToken);
   const parsed = parseQuery(q);
@@ -102,22 +104,17 @@ export function SearchBox({ initial }: { initial: string }) {
 
   let suggestions: Suggestion[];
   if (fromMatch) {
-    const prefix = fromMatch[1].toLowerCase();
-    suggestions = Object.values(users)
-      .filter((u) => u.name.startsWith(prefix))
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .slice(0, 6)
-      .map((u) => ({
-        key: u.id,
-        label: (
-          <span className="flex items-center gap-2">
-            <Avatar user={u} size={20} /> {u.name}
-            {u.id === me.id && <span className="opacity-60">(you)</span>}
-          </span>
-        ),
-        hint: 'from',
-        run: () => complete(`from:@${u.name}`),
-      }));
+    suggestions = fromUsers.map((u) => ({
+      key: u.id,
+      label: (
+        <span className="flex items-center gap-2">
+          <Avatar user={u} size={20} /> {u.name}
+          {u.id === me.id && <span className="opacity-60">(you)</span>}
+        </span>
+      ),
+      hint: 'from',
+      run: () => complete(`from:@${u.name}`),
+    }));
   } else if (inMatch) {
     const prefix = inMatch[1].toLowerCase();
     suggestions = Object.values(convs)

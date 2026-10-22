@@ -5,7 +5,7 @@ import type { Network } from '../externals/chaos';
 import type { RealtimeHub } from '../realtime/hub';
 
 export interface FeedReader {
-  item(userId: Id, itemId: string): ActivityItem | null;
+  item(userId: Id, itemId: string): Promise<ActivityItem | null>;
 }
 
 /** Feed items a message change can affect, and for whom. Mirrors the feed's rules. */
@@ -27,12 +27,14 @@ export function affectedItems({ conversation: c, message: m, previous, root, thr
 }
 
 /** Pushes changes to connected clients: the change itself to members, and their refreshed feed items. */
+export const REALTIME_EVENTS = ['message.created', 'message.edited', 'message.deleted', 'conversation.upserted', 'conversation.left'] satisfies (keyof DomainEvents)[];
+
 export function subscribeRealtime(bus: EventSubscriber<DomainEvents>, hub: RealtimeHub, feed: FeedReader, network: Network, options?: QueueOptions) {
   return bus.subscribe(
     'realtime',
-    ['message.created', 'message.edited', 'message.deleted', 'conversation.upserted', 'conversation.left'],
+    REALTIME_EVENTS,
     (e) =>
-      network.call('realtime', () => {
+      network.call('realtime', async () => {
         switch (e.type) {
           case 'message.created':
           case 'message.edited':
@@ -41,7 +43,7 @@ export function subscribeRealtime(bus: EventSubscriber<DomainEvents>, hub: Realt
             hub.publish(conversation.memberIds, { type: e.type, message, root });
             for (const [itemId, users] of affectedItems(e.payload)) {
               for (const userId of users) {
-                const item = feed.item(userId, itemId);
+                const item = await feed.item(userId, itemId);
                 hub.publish([userId], item ? { type: 'activity.upserted', item } : { type: 'activity.removed', itemId });
               }
             }

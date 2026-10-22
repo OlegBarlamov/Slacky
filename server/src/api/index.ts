@@ -38,7 +38,7 @@ export async function api(app: FastifyInstance, { services, hub }: ApiOptions) {
     if (PUBLIC.has(req.url.split('?')[0])) return;
     const raw = req.cookies[SESSION_COOKIE];
     const cookie = raw ? req.unsignCookie(raw) : null;
-    if (!cookie?.valid || !cookie.value || !services.users.find(cookie.value)) throw new AppError('unauthenticated', 'Not signed in');
+    if (!cookie?.valid || !cookie.value || !(await services.users.find(cookie.value))) throw new AppError('unauthenticated', 'Not signed in');
     req.userId = cookie.value;
   });
 

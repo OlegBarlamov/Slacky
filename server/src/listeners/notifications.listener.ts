@@ -1,7 +1,8 @@
-import type { Conversation, Id, Message } from '../../../shared/types';
+import { type Conversation, type Id, type Message, mentionsUser } from '../../../shared/types';
 import type { DomainEvents, MessageChanged } from '../events';
 import type { EventSubscriber, QueueOptions } from '../events-system';
 import type { NotificationSender } from '../externals/notification-sender';
+import type { NotificationRepository } from '../repositories/notification.repository';
 
 type Reason = 'mention' | 'dm';
 
@@ -20,15 +21,45 @@ export function recipients({ conversation: c, message: m, previous }: MessageCha
   return out;
 }
 
-/** One notification per (message, recipient): the key makes retries and redelivery harmless. */
-export function subscribeNotifications(bus: EventSubscriber<DomainEvents>, sender: NotificationSender, options?: QueueOptions) {
+export const NOTIFICATION_EVENTS = ['message.created', 'message.edited'] satisfies (keyof DomainEvents)[];
+
+export interface NotificationDeps {
+  sender: NotificationSender;
+  ledger: NotificationRepository;
+  /** The message as it is now, to skip notifications that no longer apply. */
+  currentMessage(id: Id): Promise<Message | undefined>;
+}
+
+/** Still worth sending: the message is live and, for a mention, still mentions the recipient. */
+const stillApplies = (m: Message | undefined, recipientId: Id, reason: Reason) =>
+  !!m && !m.deletedAt && (reason !== 'mention' || mentionsUser(m, recipientId));
+
+/**
+ * One notification per (message, recipient). Jobs run at least once, so every send goes
+ * through the ledger: a retry skips recipients already sent to, and the key doubles as the
+ * provider's idempotency key for a crash between sending and recording it.
+ */
+export function subscribeNotifications(bus: EventSubscriber<DomainEvents>, deps: NotificationDeps, options?: QueueOptions) {
   return bus.subscribe(
     'notifications',
-    ['message.created', 'message.edited'],
+    NOTIFICATION_EVENTS,
     async (e) => {
       const { conversation, message } = e.payload;
       for (const [recipientId, reason] of recipients(e.payload)) {
-        await sender.send({ key: `${message.id}:${recipientId}`, recipientId, reason, convId: conversation.id, messageId: message.id, text: message.text, sentAt: Date.now() });
+        const key = `${message.id}:${recipientId}`;
+        if ((await deps.ledger.begin({ key, messageId: message.id, recipientId, reason })) !== 'pending') continue;
+        const current = await deps.currentMessage(message.id);
+        if (!stillApplies(current, recipientId, reason)) {
+          await deps.ledger.markSkipped(key);
+          continue;
+        }
+        try {
+          await deps.sender.send({ key, recipientId, reason, convId: conversation.id, messageId: message.id, text: current!.text, sentAt: Date.now() });
+        } catch (err) {
+          await deps.ledger.markFailed(key, String((err as Error)?.message ?? err));
+          throw err; // the job retries; recipients already sent to are skipped
+        }
+        await deps.ledger.markSent(key);
       }
     },
     options,

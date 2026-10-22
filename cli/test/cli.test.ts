@@ -1,18 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ActivityItem, Message, SearchResult } from '../../shared/types';
 import { buildApp } from '../../server/src/app';
-import { openDb } from '../../server/src/repositories/db';
+import { createTestDb, type TestDb } from '../../server/test/db';
 import { run } from '../src/cli';
 
 // The CLI against a real server on a random port: HTTP, cookies, services and the DB.
-let built: ReturnType<typeof buildApp>;
+let t: TestDb;
+let built: Awaited<ReturnType<typeof buildApp>>;
 let url: string;
 
 beforeEach(async () => {
-  built = buildApp(openDb(), { sessionSecret: 'test' });
+  t = await createTestDb();
+  built = await buildApp(t.db, { sessionSecret: 'test' });
   url = await built.app.listen({ port: 0, host: '127.0.0.1' });
 });
-afterEach(() => built.app.close());
+afterEach(async () => {
+  await built.bus.idle(); // listeners read the DB, so let them finish before the schema goes
+  await built.app.close();
+  await t.drop();
+});
 
 async function slacky(as: string | null, argv: string[], stdin = '') {
   const out: string[] = [];

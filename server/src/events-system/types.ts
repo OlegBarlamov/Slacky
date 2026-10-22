@@ -59,27 +59,61 @@ export interface Queue<E> {
   stop(): void;
 }
 
-export interface Subscription<E> {
+export interface Listener {
   readonly name: string;
   readonly types: readonly string[];
-  readonly queue: Queue<E>;
   unsubscribe(): void;
+}
+
+/** A listener on the in-memory bus, whose queue can be inspected directly. */
+export interface Subscription<E> extends Listener {
+  readonly queue: Queue<E>;
 }
 
 export interface EventPublisher<M extends EventMap> {
   /** Hands the event to every listener of its type. Returns immediately; delivery is async. */
-  publish<K extends keyof M & string>(type: K, payload: M[K]): EventOf<M, K>;
+  publish<K extends keyof M & string>(type: K, payload: M[K]): void;
 }
+
+/** An event waiting for its transaction to commit. */
+export interface PendingEvent<M extends EventMap, K extends keyof M & string = keyof M & string> {
+  type: K;
+  payload: M[K];
+  publishedAt: number;
+}
+
+/** Where a transactional publisher hands a transaction's events. Implement one or both. */
+export interface EventSink<M extends EventMap> {
+  /** Inside the transaction, just before commit: a durable sink writes here, so the events commit with the change. */
+  write?(events: PendingEvent<M>[]): Promise<void>;
+  /** After commit: an in-memory sink hands events over here, so a rollback publishes nothing. */
+  committed?(events: PendingEvent<M>[]): void;
+}
+
+/** What a transactional publisher needs from the database layer. */
+export interface TransactionHooks {
+  /** Identifies the transaction in progress; undefined outside one. */
+  readonly transactionInProgress: object | undefined;
+  beforeCommit(hook: () => Promise<void>): void;
+  afterCommit(hook: () => void): void;
+}
+
+/**
+ * Names each listener and the event types it takes. The publisher routes with it, so a
+ * process can enqueue jobs for listeners that run in another process.
+ */
+export type Routes<M extends EventMap> = Record<string, readonly (keyof M & string)[]>;
 
 export interface EventSubscriber<M extends EventMap> {
   /**
    * Registers a listener with its own queue. One listener can take several types; they
    * arrive in publish order through the same queue.
    */
-  subscribe<K extends keyof M & string>(name: string, types: K[], handler: Handler<EventOf<M, K>>, options?: QueueOptions): Subscription<EventOf<M, K>>;
+  subscribe<K extends keyof M & string>(name: string, types: K[], handler: Handler<EventOf<M, K>>, options?: QueueOptions): Listener;
 }
 
 export interface EventBus<M extends EventMap> extends EventPublisher<M>, EventSubscriber<M> {
+  subscribe<K extends keyof M & string>(name: string, types: K[], handler: Handler<EventOf<M, K>>, options?: QueueOptions): Subscription<EventOf<M, K>>;
   subscriptions(): readonly Subscription<EventOf<M>>[];
   /** Resolves once every queue is idle. */
   idle(): Promise<void>;

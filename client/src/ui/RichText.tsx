@@ -25,7 +25,7 @@ export function RichText({ text, highlightTerms = [] }: { text: string; highligh
         if (part.startsWith('**')) return <strong key={i}>{highlight(part.slice(2, -2), highlightTerms)}</strong>;
         if (part.startsWith('http')) return <a key={i} href={part} target="_blank" rel="noreferrer" className="text-sky-700 hover:underline">{part}</a>;
         const name = part.slice(1).toLowerCase().replace(/[._-]+$/, '');
-        const isBroadcast = name === 'channel' || name === 'here';
+        const isBroadcast = name === 'channel';
         const known = isBroadcast || Object.values(users).some((u) => u.name === name);
         if (!known) return <Fragment key={i}>{part}</Fragment>;
         const isMe = isBroadcast || name === me?.name;

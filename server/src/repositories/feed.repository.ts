@@ -1,3 +1,4 @@
+import { sql } from 'kysely';
 import type { Id } from '../../../shared/types';
 import type { DB } from './db';
 
@@ -18,67 +19,60 @@ export class FeedRepository {
   constructor(private readonly db: DB) {}
 
   /** My DMs that have messages, newest activity first. */
-  dms(userId: Id, limit: number): FeedPosition[] {
-    return this.db
-      .prepare(
-        `SELECT c.id, cm.read_seq AS readSeq FROM conversation_members cm JOIN conversations c ON c.id = cm.conversation_id
-         WHERE cm.user_id = ? AND c.kind = 'dm' AND c.last_message_at IS NOT NULL
-         ORDER BY c.last_message_at DESC LIMIT ?`,
-      )
-      .all(userId, limit) as FeedPosition[];
+  async dms(userId: Id, limit: number): Promise<FeedPosition[]> {
+    const { rows } = await sql<FeedPosition>`
+      SELECT c.id, cm.read_seq AS "readSeq" FROM conversation_members cm JOIN conversations c ON c.id = cm.conversation_id
+      WHERE cm.user_id = ${userId} AND c.kind = 'dm' AND c.last_message_at IS NOT NULL
+      ORDER BY c.last_message_at DESC LIMIT ${limit}`.execute(this.db.current);
+    return rows;
   }
 
   /** Mentions of me in channels I'm still in, newest first. DMs are left to the DM items. */
-  mentions(userId: Id, limit: number): FeedMention[] {
-    const rows = this.db
-      .prepare(
-        `SELECT mn.message_id AS messageId, mn.channel_wide AS channelWide, mn.read_at AS readAt, mn.created_at AS createdAt
-         FROM mentions mn
-         JOIN messages m ON m.id = mn.message_id
-         JOIN conversations c ON c.id = m.conversation_id AND c.kind = 'channel'
-         JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = mn.user_id
-         WHERE mn.user_id = ?
-         ORDER BY mn.created_at DESC LIMIT ?`,
-      )
-      .all(userId, limit) as (Omit<FeedMention, 'channelWide'> & { channelWide: number })[];
-    return rows.map((r) => ({ ...r, channelWide: !!r.channelWide }));
+  async mentions(userId: Id, limit: number): Promise<FeedMention[]> {
+    const { rows } = await sql<{ messageId: Id; channelWide: boolean; readAt: Date | null; createdAt: Date }>`
+      SELECT mn.message_id AS "messageId", mn.channel_wide AS "channelWide", mn.read_at AS "readAt", mn.created_at AS "createdAt"
+      FROM mentions mn
+      JOIN messages m ON m.id = mn.message_id
+      JOIN conversations c ON c.id = m.conversation_id AND c.kind = 'channel'
+      JOIN conversation_members cm ON cm.conversation_id = c.id AND cm.user_id = mn.user_id
+      WHERE mn.user_id = ${userId}
+      ORDER BY mn.created_at DESC LIMIT ${limit}`.execute(this.db.current);
+    return rows.map((r) => ({ ...r, readAt: r.readAt && r.readAt.getTime(), createdAt: r.createdAt.getTime() }));
   }
 
   /** Threads I'm a participant of, in conversations I'm still in, by latest reply. */
-  threads(userId: Id, limit: number): FeedPosition[] {
-    return this.db
-      .prepare(
-        `SELECT r.id, tp.read_seq AS readSeq
-         FROM thread_participants tp
-         JOIN messages r ON r.id = tp.root_id AND r.last_reply_at IS NOT NULL
-         JOIN conversation_members cm ON cm.conversation_id = r.conversation_id AND cm.user_id = tp.user_id
-         WHERE tp.user_id = ?
-         ORDER BY r.last_reply_at DESC LIMIT ?`,
-      )
-      .all(userId, limit) as FeedPosition[];
+  async threads(userId: Id, limit: number): Promise<FeedPosition[]> {
+    const { rows } = await sql<FeedPosition>`
+      SELECT r.id, tp.read_seq AS "readSeq"
+      FROM thread_participants tp
+      JOIN messages r ON r.id = tp.root_id AND r.last_reply_at IS NOT NULL
+      JOIN conversation_members cm ON cm.conversation_id = r.conversation_id AND cm.user_id = tp.user_id
+      WHERE tp.user_id = ${userId}
+      ORDER BY r.last_reply_at DESC LIMIT ${limit}`.execute(this.db.current);
+    return rows;
   }
 
   /** Ids of live top-level messages by others after `afterSeq`, newest first. */
-  dmMessagesFromOthers(convId: Id, userId: Id, afterSeq: number, limit: number): Id[] {
-    return this.db
-      .prepare(
-        `SELECT id FROM messages
-         WHERE conversation_id = ? AND thread_root_id IS NULL AND seq > ? AND author_id != ? AND deleted_at IS NULL
-         ORDER BY seq DESC LIMIT ?`,
-      )
-      .pluck()
-      .all(convId, afterSeq, userId, limit) as Id[];
+  async dmMessagesFromOthers(convId: Id, userId: Id, afterSeq: number, limit: number): Promise<Id[]> {
+    const rows = await this.db.current
+      .selectFrom('messages')
+      .select('id')
+      .where('conversation_id', '=', convId)
+      .where('thread_root_id', 'is', null)
+      .where('seq', '>', afterSeq)
+      .where('author_id', '!=', userId)
+      .where('deleted_at', 'is', null)
+      .orderBy('seq', 'desc')
+      .limit(limit)
+      .execute();
+    return rows.map((r) => r.id);
   }
 
   /** Ids of live replies after `afterSeq`, newest first; `excludeAuthorId` skips that user's own. */
-  replies(rootId: Id, excludeAuthorId: Id | null, afterSeq: number, limit: number): Id[] {
-    return this.db
-      .prepare(
-        `SELECT id FROM messages
-         WHERE thread_root_id = ? AND seq > ? AND author_id != coalesce(?, '') AND deleted_at IS NULL
-         ORDER BY seq DESC LIMIT ?`,
-      )
-      .pluck()
-      .all(rootId, afterSeq, excludeAuthorId, limit) as Id[];
+  async replies(rootId: Id, excludeAuthorId: Id | null, afterSeq: number, limit: number): Promise<Id[]> {
+    let query = this.db.current.selectFrom('messages').select('id').where('thread_root_id', '=', rootId).where('seq', '>', afterSeq).where('deleted_at', 'is', null);
+    if (excludeAuthorId) query = query.where('author_id', '!=', excludeAuthorId);
+    const rows = await query.orderBy('seq', 'desc').limit(limit).execute();
+    return rows.map((r) => r.id);
   }
 }

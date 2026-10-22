@@ -10,13 +10,13 @@ const startSession = (reply: FastifyReply, userId: string) =>
 
 export function authRoutes(app: FastifyInstance, { users, conversations }: Services) {
   app.post<{ Body: Body }>('/auth/register', async (req, reply) => {
-    const user = users.register(req.body?.name);
+    const user = await users.register(req.body?.name);
     startSession(reply, user.id);
     return user;
   });
 
   app.post<{ Body: Body }>('/auth/login', async (req, reply) => {
-    const user = users.login(req.body?.name);
+    const user = await users.login(req.body?.name);
     startSession(reply, user.id);
     return user;
   });
@@ -24,9 +24,13 @@ export function authRoutes(app: FastifyInstance, { users, conversations }: Servi
   app.post('/auth/logout', async (_req, reply) => reply.clearCookie(SESSION_COOKIE, { path: '/' }).status(204).send());
 
   app.get('/me', async (req) => users.find(req.userId));
-  // For clients that meet a user who registered after their bootstrap (e.g. a message author).
+  // Bootstrap only carries people in my conversations; anyone else is found by name prefix.
+  app.get<{ Querystring: { q?: string; convId?: string; limit?: string } }>('/users', async (req) =>
+    users.search(req.userId, req.query.q, req.query.convId, req.query.limit),
+  );
+  // For clients that meet a user outside their bootstrap (e.g. a message author).
   app.get<IdParams>('/users/:id', async (req) => {
-    const user = users.find(req.params.id);
+    const user = await users.find(req.params.id);
     if (!user) throw new AppError('not_found', 'User not found');
     return user;
   });

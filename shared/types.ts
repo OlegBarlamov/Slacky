@@ -51,20 +51,51 @@ export interface ConversationView {
 
 export interface Bootstrap {
   me: User;
-  users: User[];
+  users: User[]; // people in my conversations; anyone else comes from GET /users
+  unreadThreadIds: Id[]; // threads I follow with unread replies from others
   conversations: ConversationView[];
   otherChannels: Conversation[]; // channels I could join
   streamCursor: number; // pass as Last-Event-ID so nothing between bootstrap and connect is lost
 }
 
+/** A contiguous slice of one timeline (a channel's top-level messages or a thread's replies), oldest first. */
 export interface MessagePage {
   messages: Message[];
-  hasMore: boolean;
+  hasBefore: boolean; // older messages exist outside the page
+  hasAfter: boolean; // newer messages exist outside the page
 }
 
 export interface ThreadView {
   root: Message;
-  replies: Message[];
+  replies: Message[]; // a page of them, like MessagePage
+  hasBefore: boolean;
+  hasAfter: boolean;
+  lastReadSeq: number | null; // null when I'm not a participant
+}
+
+/** Read state after a read; the server only moves it forward. */
+export interface ReadState {
+  lastReadSeq: number;
+  unreadCount: number;
+  mentionCount: number;
+}
+
+export interface ThreadReadState {
+  lastReadSeq: number | null; // null when I'm not a participant
+  unreadCount: number;
+}
+
+/** A thread I follow, for the Threads view. */
+export interface FollowedThread {
+  root: Message;
+  latestReplies: Message[]; // oldest first
+  lastReadSeq: number;
+  unreadCount: number; // replies by others after lastReadSeq
+}
+
+export interface ThreadList {
+  threads: FollowedThread[]; // newest reply first
+  nextCursor: string | null;
 }
 
 export type ActivityKind = 'mention' | 'dm' | 'thread';
@@ -83,7 +114,7 @@ export interface ActivityItem {
   convId: Id;
   threadRootId: Id | null;
   entries: ActivityEntry[]; // oldest first
-  channelWide: boolean; // mention came from @channel / @here
+  channelWide: boolean; // mention came from @channel
   state: 'active' | 'deleted' | 'retracted';
   read: boolean;
   updatedAt: number; // bumps only when something new happens, not on edits
@@ -116,7 +147,6 @@ export interface PipelineState {
 export interface SearchResult {
   messages: Message[];
   total: number; // matches before the limit
-  pendingChanges: number; // events not yet applied to the index
 }
 
 export type StreamEvent =
